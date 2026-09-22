@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Busca cartas de Magic y crea una lista temporal de precios." />
+    <title>Mana Market — Card Kingdom tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Mana Market inicio">
+          <span class="brand-mark">✦</span>
+          <span>MANA<span class="brand-muted">MARKET</span></span>
+        </a>
+        <div class="session-pill"><span class="status-dot"></span> Sesión temporal</div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="eyebrow">CARD KINGDOM / MTG FINDER</div>
+          <h1>Encuentra tu próxima<br /><em>carta.</em></h1>
+          <p class="hero-copy">Busca por nombre en inglés o español y guarda tus hallazgos en una lista que vive solo mientras esta pestaña está abierta.</p>
+          <form id="search-form" class="search-box">
+            <span class="search-icon">⌕</span>
+            <input id="card-search" type="search" placeholder="Ej. Lightning Bolt, Anillo Único..." autocomplete="off" required />
+            <button type="submit">Buscar <span>↗</span></button>
+          </form>
+          <div class="search-hint"><span>⌘</span> Presiona Enter para buscar <span class="hint-divider"></span> Nombres en inglés o español</div>
+        </section>
+
+        <section class="results-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">01 / RESULTADO</span>
+              <h2 id="result-title">Tu búsqueda aparecerá aquí</h2>
+            </div>
+            <div id="result-count" class="result-count">—</div>
+          </div>
+          <div id="result-area" class="result-area empty">
+            <div class="empty-state">
+              <div class="empty-orbit"><span>✦</span></div>
+              <strong>Tu radar está listo</strong>
+              <p>Escribe el nombre de una carta para ver su arte y su precio en Card Kingdom.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="list-section">
+          <div class="section-heading list-heading">
+            <div>
+              <span class="section-kicker">02 / LISTA TEMPORAL</span>
+              <h2>Cartas guardadas <span id="saved-count" class="count-badge">0</span></h2>
+            </div>
+            <button id="download-csv" class="download-button" disabled><span>↓</span> Descargar CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>CARTA</th><th>IDIOMA</th><th>PRECIO CARD KINGDOM</th><th></th></tr></thead>
+              <tbody id="saved-table"><tr class="table-empty"><td colspan="4">Aún no has guardado cartas en esta sesión.</td></tr></tbody>
+            </table>
+          </div>
+          <p class="temporary-note"><span>◌</span> Esta lista no se guarda en tu dispositivo y se reinicia al cerrar la página.</p>
+        </section>
+      </main>
+
+      <footer><span>Hecho para quienes juegan con intención.</span><a href="https://www.cardkingdom.com" target="_blank" rel="noreferrer">Ver Card Kingdom ↗</a></footer>
+    </div>
+    <div id="toast" class="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
