@@ -18,9 +18,11 @@ form.addEventListener("submit", async (event) => {
   if (!query) return;
   setLoading();
   try {
-    const card = await findCard(query);
-    currentCard = card;
-    renderResult(card);
+    const cards = await findCards(query);
+    if (!cards.length) {
+      throw new Error("No encontramos resultados que incluyan esa palabra.");
+    }
+    renderOptions(cards, query);
   } catch (error) {
     currentCard = null;
     resultTitle.textContent = "No encontramos esa carta";
@@ -30,15 +32,77 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-async function findCard(query) {
-  const response = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(query)}`);
-  if (!response.ok) throw new Error("Revisa la escritura o prueba el nombre en inglés.");
-  const card = await response.json();
-  const image = card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal;
-  if (!image) throw new Error("Esta carta no tiene una imagen disponible.");
-  const kingdomUrl = `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`;
+async function findCards(query) {
+  try {
+    const response = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(`name:${query}`)}&order=name&unique=cards`);
+    if (!response.ok) return await findClosestFallback(query);
+
+    const data = await response.json();
+    const cards = (data.data || []).slice(0, 8).map((card) => ({
+      name: card.name,
+      image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
+      language: card.lang === "es" ? "Español" : "Inglés",
+      price: null,
+      kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
+      set: card.set_name,
+      id: card.id,
+    }));
+
+    if (cards.length) {
+      return cards;
+    }
+
+    return await findClosestFallback(query);
+  } catch {
+    return await findClosestFallback(query);
+  }
+}
+
+async function findClosestFallback(query) {
+  try {
+    const response = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(query)}`);
+    if (!response.ok) return [];
+
+    const card = await response.json();
+    return [{
+      name: card.name,
+      image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
+      language: card.lang === "es" ? "Español" : "Inglés",
+      price: null,
+      kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
+      set: card.set_name,
+      id: card.id,
+    }];
+  } catch {
+    return [];
+  }
+}
+
+async function enrichCard(card) {
   const price = await getCardKingdomPrice(card.name);
-  return { name: card.name, image, language: card.lang === "es" ? "Español" : "Inglés", price, kingdomUrl, set: card.set_name };
+  return { ...card, price };
+}
+
+function renderOptions(cards, query) {
+  resultTitle.textContent = `Coincidencias para “${escapeHtml(query)}”`;
+  resultCount.textContent = `${cards.length} RESULTADOS`;
+  resultArea.className = "result-area";
+  resultArea.innerHTML = `<div class="result-options">${cards.map((card, index) => `
+    <button class="option-card" type="button" data-index="${index}">
+      <span class="option-card-name">${escapeHtml(card.name)}</span>
+      <span class="option-card-set">${escapeHtml(card.set || "Carta")}</span>
+    </button>
+  `).join("")}</div>`;
+
+  resultArea.querySelectorAll(".option-card").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.index);
+      const selectedCard = cards[index];
+      const enrichedCard = await enrichCard(selectedCard);
+      currentCard = enrichedCard;
+      renderResult(enrichedCard);
+    });
+  });
 }
 
 async function getCardKingdomPrice(name) {
