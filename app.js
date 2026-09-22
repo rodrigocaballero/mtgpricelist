@@ -37,17 +37,64 @@ async function searchCards(query, page = 1) {
   }
 }
 
+function removeAccents(value) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function buildScryfallSearchCandidates(query) {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const variants = [...new Set([
+    cleanQuery,
+    removeAccents(cleanQuery),
+    cleanQuery.toLowerCase(),
+    removeAccents(cleanQuery.toLowerCase()),
+  ])].filter(Boolean);
+
+  const candidates = [];
+
+  variants.forEach((variant) => {
+    const phrase = `"${variant.replace(/"/g, '\\"')}"`;
+    candidates.push(`lang:es name:${phrase}`);
+    candidates.push(`lang:es ${phrase}`);
+    candidates.push(`name:${phrase}`);
+    candidates.push(`oracle:${phrase}`);
+  });
+
+  return [...new Set(candidates)];
+}
+
+async function fetchScryfallCards(query, page = 1) {
+  const candidateQueries = buildScryfallSearchCandidates(query);
+
+  for (const candidate of candidateQueries) {
+    try {
+      const response = await fetch(
+        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(candidate)}&order=name&unique=cards&page=${page}&per_page=${RESULTS_PER_PAGE}`
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (Array.isArray(data.data) && data.data.length) {
+        return data;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return { data: [], total_cards: 0 };
+}
+
 async function findCards(query, page = 1) {
   try {
-    const response = await fetch(
-      `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&order=name&unique=cards&page=${page}&per_page=${RESULTS_PER_PAGE}`
-    );
-
-    if (!response.ok) {
+    const data = await fetchScryfallCards(query, page);
+    if (!Array.isArray(data.data) || !data.data.length) {
       return { cards: await findClosestFallback(query), totalPages: 1 };
     }
 
-    const data = await response.json();
     const cards = (data.data || []).map((card) => ({
       name: card.name,
       image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
@@ -70,11 +117,7 @@ async function findCards(query, page = 1) {
 
 async function findClosestFallback(query) {
   try {
-    const response = await fetch(
-      `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&order=name&unique=cards&page=1&per_page=${RESULTS_PER_PAGE}`
-    );
-    if (!response.ok) return [];
-    const data = await response.json();
+    const data = await fetchScryfallCards(query, 1);
     return (data.data || []).slice(0, RESULTS_PER_PAGE).map((card) => ({
       name: card.name,
       image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
