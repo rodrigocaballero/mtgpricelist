@@ -17,17 +17,22 @@
           <span class="brand-mark">✦</span>
           <span>MTG<span class="brand-muted">PRICELIST</span></span>
         </a>
-        <div class="session-pill"><span class="status-dot"></span> Sesión temporal</div>
+        <div class="session-pill"><span class="status-dot"></span> Guardada en el navegador</div>
       </header>
 
       <main>
         <section class="hero">
           <div class="eyebrow">CARD KINGDOM / MTG FINDER</div>
           <h1>Encuentra tu<br /><em>carta.</em></h1>
-          <p class="hero-copy">Busca por nombre en inglés o español y guarda tus hallazgos en una lista que vive solo mientras esta pestaña está abierta.</p>
+          <p class="hero-copy">Busca por nombre en inglés o español y guarda tus hallazgos para volver a ellos aunque cierres la pestaña.</p>
           <form id="search-form" class="search-box">
             <span class="search-icon">⌕</span>
             <input id="card-search" type="search" placeholder="Ej. Lightning Bolt, Anillo Único..." autocomplete="off" required />
+            <select id="language-filter" class="language-filter" aria-label="Filtrar por idioma">
+              <option value="all">Todos</option>
+              <option value="es">Español</option>
+              <option value="en">Inglés</option>
+            </select>
             <button type="submit">Buscar <span>↗</span></button>
           </form>
           <div class="search-hint"><span>⌘</span> Presiona Enter para buscar <span class="hint-divider"></span> Nombres en inglés o español</div>
@@ -53,10 +58,13 @@
         <section class="list-section">
           <div class="section-heading list-heading">
             <div>
-              <span class="section-kicker">02 / LISTA TEMPORAL</span>
+              <span class="section-kicker">02 / LISTA GUARDADA</span>
               <h2>Cartas guardadas <span id="saved-count" class="count-badge">0</span></h2>
             </div>
-            <button id="download-csv" class="download-button" disabled><span>↓</span> Descargar CSV</button>
+            <div class="list-actions">
+              <button id="clear-list" class="secondary-button" type="button" disabled>Vaciar lista</button>
+              <button id="download-csv" class="download-button" disabled><span>↓</span> Descargar CSV</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
@@ -73,7 +81,7 @@
               <tbody id="saved-table"><tr class="table-empty"><td colspan="6">Aún no has guardado cartas en esta sesión.</td></tr></tbody>
             </table>
           </div>
-          <p class="temporary-note"><span>◌</span> Esta lista no se guarda en tu dispositivo y se reinicia al cerrar la página.</p>
+          <p class="temporary-note"><span>◌</span> Esta lista se guarda en tu navegador y se mantiene entre cierres de la página.</p>
         </section>
       </main>
 

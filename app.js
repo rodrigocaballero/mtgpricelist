@@ -5,12 +5,17 @@ const resultTitle = document.querySelector("#result-title");
 const resultCount = document.querySelector("#result-count");
 const table = document.querySelector("#saved-table");
 const savedCount = document.querySelector("#saved-count");
+const clearListButton = document.querySelector("#clear-list");
 const downloadButton = document.querySelector("#download-csv");
+const languageFilter = document.querySelector("#language-filter");
 const toast = document.querySelector("#toast");
 
 const RESULTS_PER_PAGE = 5;
-let savedCards = [];
-let searchState = { query: "", page: 1, totalPages: 1 };
+const STORAGE_KEY = "mtgpricelist_saved_cards";
+let savedCards = loadSavedCards();
+let searchState = { query: "", page: 1, totalPages: 1, language: "all" };
+
+renderTable();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -19,15 +24,22 @@ form.addEventListener("submit", async (event) => {
   await searchCards(query, 1);
 });
 
+languageFilter.addEventListener("change", async () => {
+  const query = input.value.trim();
+  if (!query) return;
+  await searchCards(query, 1);
+});
+
 async function searchCards(query, page = 1) {
+  const selectedLanguage = languageFilter.value || "all";
   setLoading();
   try {
-    const result = await findCards(query, page);
+    const result = await findCards(query, page, selectedLanguage);
     if (!result.cards.length) {
       throw new Error("No encontramos resultados que incluyan esa palabra.");
     }
 
-    searchState = { query, page, totalPages: result.totalPages };
+    searchState = { query, page, totalPages: result.totalPages, language: selectedLanguage };
     renderResults(result.cards, query, page, result.totalPages);
   } catch (error) {
     resultTitle.textContent = "No encontramos esa carta";
@@ -45,21 +57,36 @@ function buildScryfallSearchCandidates(query) {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const variants = [...new Set([
+  const normalized = [
     cleanQuery,
     removeAccents(cleanQuery),
     cleanQuery.toLowerCase(),
     removeAccents(cleanQuery.toLowerCase()),
+  ];
+
+  const tokens = [...new Set(
+    normalized.flatMap((value) => value.split(/\s+/).filter(Boolean))
+  )].filter(Boolean);
+
+  const baseVariants = [...new Set([
+    ...normalized,
+    ...tokens,
+    tokens.join(" "),
+    tokens.join(" OR "),
   ])].filter(Boolean);
 
   const candidates = [];
 
-  variants.forEach((variant) => {
-    const phrase = `"${variant.replace(/"/g, '\\"')}"`;
-    candidates.push(`lang:es name:${phrase}`);
-    candidates.push(`lang:es ${phrase}`);
-    candidates.push(`name:${phrase}`);
-    candidates.push(`oracle:${phrase}`);
+  baseVariants.forEach((variant) => {
+    const safe = variant.replace(/"/g, "").trim();
+    if (!safe) return;
+
+    candidates.push(`name:${safe}`);
+    candidates.push(`name:"${safe}"`);
+    candidates.push(`oracle:${safe}`);
+    candidates.push(`oracle:"${safe}"`);
+    candidates.push(`lang:es name:${safe}`);
+    candidates.push(`lang:es name:"${safe}"`);
   });
 
   return [...new Set(candidates)];
@@ -71,7 +98,7 @@ async function fetchScryfallCards(query, page = 1) {
   for (const candidate of candidateQueries) {
     try {
       const response = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(candidate)}&order=name&unique=cards&page=${page}&per_page=${RESULTS_PER_PAGE}`
+        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(candidate)}&order=name&unique=prints&page=${page}&per_page=${RESULTS_PER_PAGE}`
       );
 
       if (!response.ok) continue;
@@ -88,44 +115,80 @@ async function fetchScryfallCards(query, page = 1) {
   return { data: [], total_cards: 0 };
 }
 
-async function findCards(query, page = 1) {
-  try {
-    const data = await fetchScryfallCards(query, page);
-    if (!Array.isArray(data.data) || !data.data.length) {
-      return { cards: await findClosestFallback(query), totalPages: 1 };
+function groupCardVariants(cards) {
+  const grouped = new Map();
+
+  cards.forEach((card) => {
+    const key = normalizeCardName(card.name || "");
+    if (!key) return;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        name: card.name,
+        image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
+        language: card.lang === "es" ? "Español" : "Inglés",
+        set: card.set_name || "Set desconocido",
+        oracleText: card.oracle_text || "Sin descripción disponible",
+        rarity: card.rarity || "Común",
+        kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
+        variants: [],
+        priceUsd: null,
+        priceClp: null,
+      });
     }
 
-    const cards = (data.data || []).map((card) => ({
+    const group = grouped.get(key);
+    const variant = {
       name: card.name,
-      image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
-      language: card.lang === "es" ? "Español" : "Inglés",
       set: card.set_name || "Set desconocido",
-      oracleText: card.oracle_text || "Sin descripción disponible",
+      language: card.lang === "es" ? "Español" : "Inglés",
       rarity: card.rarity || "Común",
+      image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || group.image || "",
+      oracleText: card.oracle_text || group.oracleText || "Sin descripción disponible",
       kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
-      priceUsd: null,
-      priceClp: null,
-    }));
+    };
 
+    const exists = group.variants.some((item) => item.set === variant.set && item.language === variant.language);
+    if (!exists) {
+      group.variants.push(variant);
+    }
+  });
+
+  return [...grouped.values()].map((card) => ({
+    ...card,
+    variantSummary: card.variants.slice(0, 8).map((item) => `${item.set} · ${item.language}`).join(" • "),
+  }));
+}
+
+async function findCards(query, page = 1, language = "all") {
+  try {
+    const data = await fetchScryfallCards(query, page);
+    const filteredData = Array.isArray(data.data)
+      ? data.data.filter((card) => language === "all" || (language === "es" ? card.lang === "es" : card.lang !== "es"))
+      : [];
+
+    if (!filteredData.length) {
+      return { cards: await findClosestFallback(query, language), totalPages: 1 };
+    }
+
+    const cards = groupCardVariants(filteredData);
     const enrichedCards = await Promise.all(cards.map((card) => enrichCard(card)));
-    const totalPages = Math.max(1, Math.ceil((data.total_cards || enrichedCards.length) / RESULTS_PER_PAGE));
+    const totalPages = Math.max(1, Math.ceil((filteredData.length || enrichedCards.length) / RESULTS_PER_PAGE));
     return { cards: enrichedCards, totalPages };
   } catch {
-    return { cards: await findClosestFallback(query), totalPages: 1 };
+    return { cards: await findClosestFallback(query, language), totalPages: 1 };
   }
 }
 
-async function findClosestFallback(query) {
+async function findClosestFallback(query, language = "all") {
   try {
     const data = await fetchScryfallCards(query, 1);
-    return (data.data || []).slice(0, RESULTS_PER_PAGE).map((card) => ({
-      name: card.name,
-      image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || "",
-      language: card.lang === "es" ? "Español" : "Inglés",
-      set: card.set_name || "Set desconocido",
-      oracleText: card.oracle_text || "Sin descripción disponible",
-      rarity: card.rarity || "Común",
-      kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
+    const filteredData = Array.isArray(data.data)
+      ? data.data.filter((card) => language === "all" || (language === "es" ? card.lang === "es" : card.lang !== "es"))
+      : [];
+
+    return groupCardVariants(filteredData).slice(0, RESULTS_PER_PAGE).map((card) => ({
+      ...card,
       priceUsd: null,
       priceClp: null,
     }));
@@ -147,19 +210,44 @@ async function enrichCard(card) {
 }
 
 function renderResults(cards, query, page, totalPages) {
+  const languageLabel = languageFilter.value === "es" ? "Español" : languageFilter.value === "en" ? "Inglés" : "Todos";
   resultTitle.textContent = `Coincidencias para “${escapeHtml(query)}”`;
-  resultCount.textContent = `${cards.length} RESULTADOS`;
+  resultCount.textContent = `${cards.length} RESULTADOS · ${languageLabel}`;
   resultArea.className = "result-area";
 
   const cardsMarkup = cards.map((card) => {
     const quantityValue = 1;
+    const defaultVariant = card.variants?.[0] || card;
+    const variantsMarkup = (card.variants || []).map((variant, index) => {
+      const isSelected = index === 0;
+      const variantLabel = `${variant.set} · ${variant.language}`;
+      return `
+        <button
+          type="button"
+          class="variant-option ${isSelected ? "selected" : ""}"
+          data-card-name="${escapeHtml(card.name)}"
+          data-variant-set="${escapeHtml(variant.set)}"
+          data-variant-language="${escapeHtml(variant.language)}"
+          data-variant-image="${(variant.image || card.image || "").replace(/"/g, "&quot;")}"
+          title="${escapeHtml(variantLabel)}"
+          aria-label="Seleccionar versión ${escapeHtml(variantLabel)}"
+        >
+          <span>${escapeHtml(variant.set)}</span>
+        </button>
+      `;
+    }).join("");
+
     return `
-      <article class="card-result">
-        <img class="card-image" src="${card.image}" alt="${escapeHtml(card.name)}" />
+      <article class="card-result" data-selected-name="${escapeHtml(card.name)}" data-selected-set="${escapeHtml(defaultVariant.set)}" data-selected-language="${escapeHtml(defaultVariant.language)}" data-current-image="${escapeHtml(defaultVariant.image || card.image || "")}">
+        <img class="card-image" src="${defaultVariant.image || card.image}" alt="${escapeHtml(card.name)}" />
         <div class="result-info">
           <span class="tag">${escapeHtml(card.language.toUpperCase())} · ${escapeHtml(card.set)}</span>
           <h3>${escapeHtml(card.name)}</h3>
           <span class="subname">RAREZA: ${escapeHtml(String(card.rarity).toUpperCase())}</span>
+          <div class="variants-box">
+            <span>Variantes</span>
+            <div class="variant-list">${variantsMarkup}</div>
+          </div>
           <span class="price-label">PRECIO CARD KINGDOM</span>
           <strong class="price">${card.priceUsd ? `$${card.priceUsd.toFixed(2)} USD` : "Consultar"}</strong>
           <span class="price-note">${card.priceClp ? `Equivale a ${formatClp(card.priceClp)} CLP` : "Precio aún no disponible"}</span>
@@ -187,12 +275,49 @@ function renderResults(cards, query, page, totalPages) {
 
   resultArea.innerHTML = `<div class="result-list">${cardsMarkup}</div>${pagination}`;
 
+  resultArea.querySelectorAll(".variant-option").forEach((button) => {
+    button.addEventListener("click", () => {
+      const article = button.closest(".card-result");
+      const variantButtons = article.querySelectorAll(".variant-option");
+      variantButtons.forEach((item) => item.classList.toggle("selected", item === button));
+
+      const selectedImage = button.dataset.variantImage || article.dataset.currentImage || "";
+      const imageElement = article.querySelector(".card-image");
+      if (imageElement && selectedImage) {
+        imageElement.src = selectedImage;
+      }
+
+      article.dataset.selectedSet = button.dataset.variantSet;
+      article.dataset.selectedLanguage = button.dataset.variantLanguage;
+      article.dataset.currentImage = selectedImage;
+    });
+  });
+
   resultArea.querySelectorAll(".save-button").forEach((button) => {
     button.addEventListener("click", () => {
       const card = cards.find((item) => item.name === button.dataset.name);
+      const article = button.closest(".card-result");
+      const selectedVariantButton = article?.querySelector(".variant-option.selected");
+      const selectedVariant = card?.variants?.find((variant) =>
+        variant.set === selectedVariantButton?.dataset.variantSet &&
+        variant.language === selectedVariantButton?.dataset.variantLanguage
+      ) || card?.variants?.[0] || card;
+
       const quantityInput = resultArea.querySelector(`.quantity-input[data-name="${button.dataset.name}"]`);
       const quantity = Number(quantityInput?.value || 1);
-      if (card) saveCard(card, quantity);
+      const cardToSave = selectedVariant && card ? {
+        ...card,
+        ...selectedVariant,
+        name: selectedVariant.name || card.name,
+        image: selectedVariant.image || card.image,
+        set: selectedVariant.set || card.set,
+        language: selectedVariant.language || card.language,
+        oracleText: selectedVariant.oracleText || card.oracleText,
+        rarity: selectedVariant.rarity || card.rarity,
+        kingdomUrl: selectedVariant.kingdomUrl || card.kingdomUrl,
+      } : card;
+
+      if (cardToSave) saveCard(cardToSave, quantity);
     });
   });
 
@@ -204,6 +329,10 @@ function renderResults(cards, query, page, totalPages) {
   });
 }
 
+function normalizeCardName(value) {
+  return removeAccents(String(value || "")).trim().toLowerCase();
+}
+
 function saveCard(card, quantity = 1) {
   const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
   const normalizedCard = {
@@ -213,25 +342,43 @@ function saveCard(card, quantity = 1) {
     priceClp: card.priceClp ?? (card.priceUsd ? convertUsdToClp(card.priceUsd) : null),
   };
 
-  const existing = savedCards.find((saved) => saved.name === normalizedCard.name);
+  const cardKey = normalizeCardName(normalizedCard.name);
+  const existing = savedCards.find((saved) => normalizeCardName(saved.name) === cardKey);
   if (existing) {
     existing.quantity += safeQuantity;
+    persistSavedCards();
     renderTable();
     showToast(`${safeQuantity} más agregadas a ${normalizedCard.name}.`);
     return;
   }
 
   savedCards.push(normalizedCard);
+  persistSavedCards();
   renderTable();
   showToast(`${safeQuantity} carta${safeQuantity > 1 ? "s" : ""} agregada${safeQuantity > 1 ? "s" : ""} a la lista.`);
 }
 
+function loadSavedCards() {
+  try {
+    const storedValue = localStorage.getItem(STORAGE_KEY);
+    const parsed = storedValue ? JSON.parse(storedValue) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedCards() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(savedCards));
+}
+
 function renderTable() {
   savedCount.textContent = savedCards.length;
+  clearListButton.disabled = savedCards.length === 0;
   downloadButton.disabled = savedCards.length === 0;
 
   if (!savedCards.length) {
-    table.innerHTML = `<tr class="table-empty"><td colspan="6">Aún no has guardado cartas en esta sesión.</td></tr>`;
+    table.innerHTML = `<tr class="table-empty"><td colspan="6">Aún no has guardado cartas. La lista se mantiene guardada entre cierres.</td></tr>`;
     return;
   }
 
@@ -263,10 +410,23 @@ function renderTable() {
   table.querySelectorAll(".remove-card").forEach((button) => {
     button.addEventListener("click", () => {
       savedCards.splice(Number(button.dataset.index), 1);
+      persistSavedCards();
       renderTable();
     });
   });
 }
+
+clearListButton.addEventListener("click", () => {
+  if (!savedCards.length) {
+    showToast("La lista ya está vacía.");
+    return;
+  }
+
+  savedCards = [];
+  persistSavedCards();
+  renderTable();
+  showToast("Lista temporal vaciada.");
+});
 
 downloadButton.addEventListener("click", () => {
   const rows = [["Carta", "Cantidad", "Idioma", "Precio USD", "Precio CLP", "Enlace"]];
