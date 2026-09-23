@@ -70,4 +70,12 @@ footer a { color:#777873; text-decoration:none; }
 footer a:hover { color:var(--orange); }
 .toast { position:fixed; right:24px; bottom:24px; padding:13px 17px; color:#fff; background:var(--dark); opacity:0; transform:translateY(10px); transition:.2s; font-size:13px; pointer-events:none; }
 .toast.visible { opacity:1; transform:none; }
+.floating-list-preview { position:fixed; z-index:10; top:50%; right:0; display:flex; align-items:center; gap:9px; min-width:84px; padding:12px 13px 12px 11px; border:1px solid var(--ink); border-right:0; border-radius:12px 0 0 12px; color:var(--ink); background:var(--lime); box-shadow:0 8px 22px rgba(32,36,42,.16); cursor:pointer; transform:translateY(-50%); font:600 12px "Space Grotesk",sans-serif; transition:transform .18s,background .18s,box-shadow .18s; }
+.floating-list-preview:hover { background:#c9e94a; box-shadow:0 10px 26px rgba(32,36,42,.22); transform:translateY(-50%) translateX(-3px); }
+.floating-list-icon { font-size:22px; line-height:1; }
+.floating-list-count { display:grid; place-items:center; min-width:21px; height:21px; padding:0 5px; border-radius:50%; color:var(--lime); background:var(--dark); font:11px "DM Mono",monospace; }
+.floating-list-preview.has-items .floating-list-count { background:var(--orange); color:#fff; }
+.list-section { scroll-margin-top:24px; transition:background .2s; }
+.list-section-focused { background:rgba(216,243,94,.16); }
+@media(max-width:650px) { .floating-list-preview { top:auto; right:16px; bottom:16px; border:1px solid var(--ink); border-radius:999px; transform:none; }.floating-list-preview:hover { transform:translateY(-2px); }.floating-list-label { display:none; } }
 @media(max-width:650px) { .shell { padding:0 20px; }.topbar { height:72px; }.session-pill { display:none; }.hero { padding:64px 0 55px; }.search-box { height:auto; flex-wrap:wrap; padding:8px; gap:8px; }.search-box input { height:43px; }.language-filter { width:100%; height:43px; }.search-box button { width:100%; }.card-result { grid-template-columns:105px 1fr; gap:18px; padding:16px; }.card-image { width:105px; }.result-info h3 { font-size:23px; }.price-label { margin-top:18px; }.result-actions { flex-direction:column; align-items:stretch; }.save-button,.external-button { text-align:center; }.section-heading { align-items:flex-start; flex-direction:column; gap:18px; }.download-button { align-self:flex-start; }footer { gap:15px; flex-direction:column; } }

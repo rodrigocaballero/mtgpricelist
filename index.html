@@ -55,7 +55,7 @@
           </div>
         </section>
 
-        <section class="list-section">
+        <section id="saved-list" class="list-section">
           <div class="section-heading list-heading">
             <div>
               <span class="section-kicker">02 / LISTA GUARDADA</span>
@@ -90,6 +90,11 @@
         <a href="https://www.cardkingdom.com" target="_blank" rel="noreferrer">Ver Card Kingdom ↗</a>
       </footer>
     </div>
+    <button id="floating-list-preview" class="floating-list-preview" type="button" aria-label="Ir a la lista guardada" title="Ir a la lista guardada">
+      <span class="floating-list-icon" aria-hidden="true">☷</span>
+      <span class="floating-list-label">Lista</span>
+      <span id="floating-list-count" class="floating-list-count">0</span>
+    </button>
     <div id="toast" class="toast" role="status"></div>
     <script src="app.js"></script>
   </body>

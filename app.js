@@ -9,6 +9,9 @@ const clearListButton = document.querySelector("#clear-list");
 const downloadButton = document.querySelector("#download-csv");
 const languageFilter = document.querySelector("#language-filter");
 const toast = document.querySelector("#toast");
+const floatingListPreview = document.querySelector("#floating-list-preview");
+const floatingListCount = document.querySelector("#floating-list-count");
+const savedListSection = document.querySelector("#saved-list");
 
 const RESULTS_PER_PAGE = 5;
 const STORAGE_KEY = "mtgpricelist_saved_cards";
@@ -431,6 +434,8 @@ function persistSavedCards() {
 
 function renderTable() {
   savedCount.textContent = savedCards.length;
+  floatingListCount.textContent = savedCards.length;
+  floatingListPreview.classList.toggle("has-items", savedCards.length > 0);
   clearListButton.disabled = savedCards.length === 0;
   downloadButton.disabled = savedCards.length === 0;
 
@@ -472,6 +477,12 @@ function renderTable() {
     });
   });
 }
+
+floatingListPreview.addEventListener("click", () => {
+  savedListSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  savedListSection.classList.add("list-section-focused");
+  setTimeout(() => savedListSection.classList.remove("list-section-focused"), 900);
+});
 
 clearListButton.addEventListener("click", () => {
   if (!savedCards.length) {
