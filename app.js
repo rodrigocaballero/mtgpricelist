@@ -132,7 +132,7 @@ function groupCardVariants(cards) {
         rarity: card.rarity || "Común",
         kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
         variants: [],
-        priceUsd: null,
+        priceUsd: getScryfallPrice(card),
         priceClp: null,
       });
     }
@@ -146,6 +146,8 @@ function groupCardVariants(cards) {
       image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || group.image || "",
       oracleText: card.oracle_text || group.oracleText || "Sin descripción disponible",
       kingdomUrl: `https://www.cardkingdom.com/catalog/search?filter%5Bname%5D=${encodeURIComponent(card.name)}`,
+      priceUsd: getScryfallPrice(card),
+      priceClp: null,
     };
 
     const exists = group.variants.some((item) => item.set === variant.set && item.language === variant.language);
@@ -198,14 +200,37 @@ async function findClosestFallback(query, language = "all") {
 }
 
 async function enrichCard(card) {
-  const price = await getCardKingdomPrice(card.name);
   const rate = await getUsdToClpRate();
-  const priceUsd = Number(price ?? 0);
-  const priceClp = priceUsd > 0 ? Math.round(priceUsd * rate) : null;
+  const basePrice = card.priceUsd ?? await getCardKingdomPrice(card.name);
+  const basePriceUsd = Number(basePrice ?? 0);
+  const basePriceClp = basePriceUsd > 0 ? Math.round(basePriceUsd * rate) : null;
+
+  const variantPrices = card.variants && card.variants.length
+    ? await Promise.all(card.variants.map(async (variant) => {
+        const variantPrice = variant.priceUsd ?? await getCardKingdomPrice(variant.name);
+        const variantPriceUsd = Number(variantPrice ?? basePriceUsd ?? 0);
+        return {
+          ...variant,
+          priceUsd: variantPriceUsd > 0 ? variantPriceUsd : null,
+          priceClp: variantPriceUsd > 0 ? Math.round(variantPriceUsd * rate) : null,
+        };
+      }))
+    : [];
+
+  const resolvedVariants = variantPrices.length ? variantPrices : (card.variants || []).map((variant) => ({
+    ...variant,
+    priceUsd: basePriceUsd > 0 ? basePriceUsd : null,
+    priceClp: basePriceClp,
+  }));
+
+  const defaultVariantPriceUsd = Number(resolvedVariants[0]?.priceUsd ?? basePriceUsd ?? 0);
+  const defaultVariantPriceClp = defaultVariantPriceUsd > 0 ? Math.round(defaultVariantPriceUsd * rate) : null;
+
   return {
     ...card,
-    priceUsd: priceUsd > 0 ? priceUsd : null,
-    priceClp,
+    variants: resolvedVariants,
+    priceUsd: defaultVariantPriceUsd > 0 ? defaultVariantPriceUsd : null,
+    priceClp: defaultVariantPriceClp,
   };
 }
 
@@ -218,6 +243,9 @@ function renderResults(cards, query, page, totalPages) {
   const cardsMarkup = cards.map((card) => {
     const quantityValue = 1;
     const defaultVariant = card.variants?.[0] || card;
+    const selectedVariant = defaultVariant || card;
+    const priceUsd = Number(selectedVariant?.priceUsd ?? card.priceUsd ?? 0);
+    const priceClp = Number(selectedVariant?.priceClp ?? card.priceClp ?? 0);
     const variantsMarkup = (card.variants || []).map((variant, index) => {
       const isSelected = index === 0;
       const variantLabel = `${variant.set} · ${variant.language}`;
@@ -229,6 +257,8 @@ function renderResults(cards, query, page, totalPages) {
           data-variant-set="${escapeHtml(variant.set)}"
           data-variant-language="${escapeHtml(variant.language)}"
           data-variant-image="${(variant.image || card.image || "").replace(/"/g, "&quot;")}"
+          data-variant-price-usd="${variant.priceUsd ?? card.priceUsd ?? ""}"
+          data-variant-price-clp="${variant.priceClp ?? card.priceClp ?? ""}"
           title="${escapeHtml(variantLabel)}"
           aria-label="Seleccionar versión ${escapeHtml(variantLabel)}"
         >
@@ -238,7 +268,7 @@ function renderResults(cards, query, page, totalPages) {
     }).join("");
 
     return `
-      <article class="card-result" data-selected-name="${escapeHtml(card.name)}" data-selected-set="${escapeHtml(defaultVariant.set)}" data-selected-language="${escapeHtml(defaultVariant.language)}" data-current-image="${escapeHtml(defaultVariant.image || card.image || "")}">
+      <article class="card-result" data-selected-name="${escapeHtml(card.name)}" data-selected-set="${escapeHtml(defaultVariant.set)}" data-selected-language="${escapeHtml(defaultVariant.language)}" data-current-image="${escapeHtml(defaultVariant.image || card.image || "")}" data-selected-price-usd="${priceUsd}" data-selected-price-clp="${priceClp}">
         <img class="card-image" src="${defaultVariant.image || card.image}" alt="${escapeHtml(card.name)}" />
         <div class="result-info">
           <span class="tag">${escapeHtml(card.language.toUpperCase())} · ${escapeHtml(card.set)}</span>
@@ -249,8 +279,8 @@ function renderResults(cards, query, page, totalPages) {
             <div class="variant-list">${variantsMarkup}</div>
           </div>
           <span class="price-label">PRECIO CARD KINGDOM</span>
-          <strong class="price">${card.priceUsd ? `$${card.priceUsd.toFixed(2)} USD` : "Consultar"}</strong>
-          <span class="price-note">${card.priceClp ? `Equivale a ${formatClp(card.priceClp)} CLP` : "Precio aún no disponible"}</span>
+          <strong class="price">${priceUsd > 0 ? `$${priceUsd.toFixed(2)} USD` : "Consultar"}</strong>
+          <span class="price-note">${priceClp > 0 ? `Equivale a ${formatClp(priceClp)} CLP` : "Precio aún no disponible"}</span>
           <p class="oracle-text">${escapeHtml(card.oracleText)}</p>
           <div class="result-actions">
             <label class="quantity-control">
@@ -282,14 +312,27 @@ function renderResults(cards, query, page, totalPages) {
       variantButtons.forEach((item) => item.classList.toggle("selected", item === button));
 
       const selectedImage = button.dataset.variantImage || article.dataset.currentImage || "";
+      const selectedPriceUsd = Number(button.dataset.variantPriceUsd || article.dataset.selectedPriceUsd || 0);
+      const selectedPriceClp = Number(button.dataset.variantPriceClp || article.dataset.selectedPriceClp || 0);
       const imageElement = article.querySelector(".card-image");
       if (imageElement && selectedImage) {
         imageElement.src = selectedImage;
       }
 
+      const priceElement = article.querySelector(".price");
+      const priceNoteElement = article.querySelector(".price-note");
+      if (priceElement) {
+        priceElement.textContent = selectedPriceUsd > 0 ? `$${selectedPriceUsd.toFixed(2)} USD` : "Consultar";
+      }
+      if (priceNoteElement) {
+        priceNoteElement.textContent = selectedPriceClp > 0 ? `Equivale a ${formatClp(selectedPriceClp)} CLP` : "Precio aún no disponible";
+      }
+
       article.dataset.selectedSet = button.dataset.variantSet;
       article.dataset.selectedLanguage = button.dataset.variantLanguage;
       article.dataset.currentImage = selectedImage;
+      article.dataset.selectedPriceUsd = String(selectedPriceUsd);
+      article.dataset.selectedPriceClp = String(selectedPriceClp);
     });
   });
 
@@ -315,6 +358,8 @@ function renderResults(cards, query, page, totalPages) {
         oracleText: selectedVariant.oracleText || card.oracleText,
         rarity: selectedVariant.rarity || card.rarity,
         kingdomUrl: selectedVariant.kingdomUrl || card.kingdomUrl,
+        priceUsd: selectedVariant.priceUsd ?? card.priceUsd ?? null,
+        priceClp: selectedVariant.priceClp ?? card.priceClp ?? null,
       } : card;
 
       if (cardToSave) saveCard(cardToSave, quantity);
@@ -333,6 +378,12 @@ function normalizeCardName(value) {
   return removeAccents(String(value || "")).trim().toLowerCase();
 }
 
+function getScryfallPrice(card) {
+  const price = card.prices?.usd || card.prices?.usd_foil || card.prices?.usd_etched;
+  const numericPrice = Number(price);
+  return numericPrice > 0 ? numericPrice : null;
+}
+
 function saveCard(card, quantity = 1) {
   const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
   const normalizedCard = {
@@ -342,8 +393,8 @@ function saveCard(card, quantity = 1) {
     priceClp: card.priceClp ?? (card.priceUsd ? convertUsdToClp(card.priceUsd) : null),
   };
 
-  const cardKey = normalizeCardName(normalizedCard.name);
-  const existing = savedCards.find((saved) => normalizeCardName(saved.name) === cardKey);
+  const cardKey = getSavedCardKey(normalizedCard);
+  const existing = savedCards.find((saved) => getSavedCardKey(saved) === cardKey);
   if (existing) {
     existing.quantity += safeQuantity;
     persistSavedCards();
@@ -356,6 +407,12 @@ function saveCard(card, quantity = 1) {
   persistSavedCards();
   renderTable();
   showToast(`${safeQuantity} carta${safeQuantity > 1 ? "s" : ""} agregada${safeQuantity > 1 ? "s" : ""} a la lista.`);
+}
+
+function getSavedCardKey(card) {
+  return [card.name, card.set, card.language]
+    .map((value) => normalizeCardName(value))
+    .join("|");
 }
 
 function loadSavedCards() {
@@ -390,7 +447,7 @@ function renderTable() {
     const total = card.priceUsd === null ? "Consultar" : `${formatClp((card.priceClp ?? convertUsdToClp(card.priceUsd)) * (card.quantity ?? 1))} CLP`;
     return `
       <tr>
-        <td class="table-card">${escapeHtml(card.name)}</td>
+        <td class="table-card">${escapeHtml(card.name)}<small>${escapeHtml(card.set || "Edición desconocida")}</small></td>
         <td class="table-qty">${card.quantity ?? 1}</td>
         <td class="table-lang">${card.language}</td>
         <td class="table-price">${unitPrice}</td>

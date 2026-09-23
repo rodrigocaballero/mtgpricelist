@@ -59,6 +59,7 @@ th { padding:15px 18px; color:#a0a09a; background:#fbfaf7; font:11px "DM Mono",m
 td { padding:17px 18px; border-top:1px solid var(--line); }
 .table-empty td { padding:35px; color:#a09f99; text-align:center; }
 .table-card { font-weight:600; }
+.table-card small { display:block; margin-top:4px; color:#7a7b76; font:11px "DM Mono",monospace; }
 .table-lang,.table-price { color:#7a7b76; font:12px "DM Mono",monospace; }
 .remove-card { color:#a4a49f; background:none; border:0; cursor:pointer; font-size:18px; }
 .remove-card:hover { color:var(--orange); }
